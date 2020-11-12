@@ -1,6 +1,7 @@
 from utils import listmap
 from math import ceil
-
+import string
+import re
 
 class RegexPart:
     r"""Class for storing information about regex building blocks capturing one specific character in searched string"""
@@ -67,26 +68,26 @@ class Data_Entry:
         self.right_gen = iter(self.right_nbh)
 
     def next_left(self):
-        r"""Returns next character of left neighbourhood iterator or None if its not present"""
+        r"""Returns next character of left neighbourhood iterator or empty string if its not present"""
 
         try:
             return next(self.left_gen)
         except:
-            return None
+            return ''
     
     def next_mid(self):
-        r"""Returns next character of left neighbourhood iterator or None if its not present"""
+        r"""Returns next character of left neighbourhood iterator or empty string if its not present"""
         try:
             return next(self.mid_gen)
         except:
-            return None
+            return ''
 
     def next_right(self):
-        r"""Returns next character of right neighbourhood iterator or None if its not present"""
+        r"""Returns next character of right neighbourhood iterator or empty string if its not present"""
         try:
             return next(self.right_gen)
         except:
-            return None
+            return ''
 
 class RegexGenerator:
     r"""
@@ -103,6 +104,11 @@ class RegexGenerator:
         self.mid_regex = ""
         self.right_regex = ""
         self.train_part_end_index = None # This will be the index to split ``data_entries`` to train and test sets if its sufficiently long
+
+        self.set_letters = set(string.ascii_letters)
+        self.set_digits = set(string.digits)
+        self.set_punctuation = set(string.punctuation)
+        self.set_whitespace = set(string.whitespace)
 
     def parse_data(self, data, append = False, inclusive_end = True, alternative_keys = []):
         r"""
@@ -185,6 +191,113 @@ class RegexGenerator:
 
         self.spans_list = [entry['selection'] for entry in self.data_entries]
 
+
+    def generate_next_part(self, left = True, mid = False, right = True):
+        r"""
+        Generates next Regex_Parts for specified parts of regex
+
+        Arguments:
+
+        left (bool, optional): if set to ``True``, ``left_gen`` of all ``data_entries`` will be used.
+        mid (bool, optional): if set to ``True``, ``mid_gen`` of all ``data_entries`` will be used.
+        right (bool, optional): if set to ``True``, ``right_gen`` of all ``data_entries`` will be used.
+
+        Returns
+
+
+        TODO
+
+        """
+
+        def find_correct_block_char(options, split_index):
+            r"""
+            Generates char element of ``RegexPart``.
+
+            Arguments:
+
+            options(list): list formed from ``data_entries`` iterators
+            split_index(int): index for splitting for train and test set
+
+            Returns:
+
+            (RegexPart): RegexPart object representing fragment matching all ``options``. None if no option provided.
+
+            """
+
+
+            # 4 kroki budowania, najpierw testujemy same znaki, jak matchuje tez na testowym to git, jak nie to ogolne, jak nie to znaki {0,1}, jak nie to ogolne {0,1}
+            if any(options):
+                
+                if self.train_part_end_index:
+                    options_set_train = set(options[:self.train_part_end_index])
+                else:
+                    options_set_train = set(options)
+
+                percentage = len(options_set_train)/len(options)
+                options_string = ''.join(options) # test set is included
+
+                # attempt 1 -> only letters present in train set
+                char_letters = f'[{''.join(options_set_train)}]'
+                if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
+                    return RegexPart(char_letters, options_set_train, percentage)
+
+                # attempt 2 -> general regex characters
+                char_general = ''
+                if self.set_letters.intersection(options_set_train):
+                    char_general += r'\w' # captures also digits
+                elif self.set_digits.intersection(options_set_train):
+                    char_general += r'\d' # only digits if `word characters` not present
+                if self.set_whitespace.intersection(options_set_train):
+                    char_general += r'\s'
+                if self.set_punctuation.intersection(options_set_train):
+                    char_general += string.punctuation
+
+                char_general = f'[{char_general}]'
+
+                if len(re.findall(char_general, options_string)) == len(options_string): # everything found
+                    return RegexPart(char_general, options_set_train, percentage)
+
+                # attempt 3 -> only letters but optional 
+                char_letters += '{0,1}'
+
+                if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
+                    return RegexPart(char_letters, options_set_train, percentage)
+
+                # attempt 4 -> general regex characters but optional
+                char_general += '{0,1}'
+
+                if len(re.findall(char_general, options_string)) == len(options_string): # everything found
+                    return RegexPart(char_general, options_set_train, percentage)
+
+                # attempt 5 -> any character or none
+
+                char_any = '[.?]'
+
+                if len(re.findall(char_any, options_string)) == len(options_string): # everything found
+                    return RegexPart(char_any, options_set_train, percentage)
+
+                raise Exception('Something went very wrong')
+
+            else:
+                return None
+            
+        
+        generated_parts = []
+
+        left_list = []
+        mid_list = []
+        right_list = []
+
+        for data_entry in self.data_entries:
+            if left:
+                left_list.append(data_entry.next_left())
+            if mid:
+                mid_list.append(data_entry.next_mid())
+            if right:
+                right_list.append(data_entry.next_right())
+
+        if any(left_list):
+            
 
     def evaluate(self):
         r"""Evaluates current regexp for all data including test and return True or False whether all matches are correct or not"""
