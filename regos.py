@@ -296,8 +296,7 @@ class RegexGenerator:
             if right:
                 right_list.append(data_entry.next_right())
 
-        if any(left_list):
-            
+        # TODO: Now it has to use left, mid and right list with find correct block char and build regex block to be used in evolve
 
     def evaluate(self):
         r"""Evaluates current regexp for all data including test and return True or False whether all matches are correct or not"""
