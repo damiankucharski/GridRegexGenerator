@@ -126,15 +126,15 @@ class RegexGenerator:
 
         >>> data = [{
 
-            "string" : "I want to extract this id: 721 and this name: Damian",
-            "selections" : [(27,29),(46,51)]
+            "string" : "I want to extract this id: 721 and this id: 123",
+            "selections" : [(27,29),(44,46)]
 
         }]
 
         If ``inclusive_end`` is set to ``False`` then ``selections`` in ``data`` could be like:
 
         >>> ...
-        "selections" : [(27,30),(46,52)]
+        "selections" : [(27,30),(44,47)]
         ...
 
         """
@@ -157,13 +157,15 @@ class RegexGenerator:
             # Creates ``Data_Entry`` for each selection (`span`) in string
             for span in entry[selection_key]:
                 d_entries.append(Data_Entry(entry[string_key], (span[0],span[1]+offset)))
-            
+                d_entries[-1].initialize_generators()
             self.data_entries.extend(d_entries)
 
 
         if len(self.data_entries) >= 5:
 
             self.train_part_end_index = int(ceil(len(self.data_entries) * 0.8))
+
+        self.save_spans_data()
 
 
     def compile_from_builders(self, ignore_mid = True, left_reversed = True):
@@ -174,6 +176,10 @@ class RegexGenerator:
 
         ignore_mid (bool, optional): if set to ``True`` then ``mid_regex`` will not be rebuilt. (default: ``True``)
         left_reversed (bool, optional):  if set to ``True`` then ``left_regex_builder`` is reversed before compiling into string regex. (default: ``True``)
+
+        Returns:
+
+        (str): string regex
         """
         
         # used if left neighbourhood was iterated in reverse and thus regex was created from its end
@@ -183,13 +189,14 @@ class RegexGenerator:
             self.left_regex = ''.join([part.char for part in self.left_regex_builder])
         if not ignore_mid:
             self.mid_regex = ''.join([part.char for part in self.mid_regex_builder])
-        self.left_regex = ''.join([part.char for part in self.right_regex_builder])
+        self.right_regex = ''.join([part.char for part in self.right_regex_builder])
 
+        return f'{self.left_regex}({self.mid_regex}){self.right_regex}'
 
     def save_spans_data(self):
         r"""Creates ``spans_list`` list inside object that captures all spans from ``data_entries``"""
 
-        self.spans_list = [entry['selection'] for entry in self.data_entries]
+        self.spans_list = [entry.selection for entry in self.data_entries]
 
 
     def generate_next_part(self, left = True, mid = False, right = True):
@@ -209,14 +216,13 @@ class RegexGenerator:
 
         """
 
-        def find_correct_block_char(options, split_index):
+        def find_correct_block_char(options):
             r"""
             Generates char element of ``RegexPart``.
 
             Arguments:
 
             options(list): list formed from ``data_entries`` iterators
-            split_index(int): index for splitting for train and test set
 
             Returns:
 
@@ -228,6 +234,12 @@ class RegexGenerator:
             # 4 kroki budowania, najpierw testujemy same znaki, jak matchuje tez na testowym to git, jak nie to ogolne, jak nie to znaki {0,1}, jak nie to ogolne {0,1}
             if any(options):
                 
+                # it has to be chacked whether one of generators didn't finish, in this case this character should be optional
+                if '' in options:
+                    optional = True
+                else:
+                    optional = False
+
                 if self.train_part_end_index:
                     options_set_train = set(options[:self.train_part_end_index])
                 else:
@@ -237,9 +249,11 @@ class RegexGenerator:
                 options_string = ''.join(options) # test set is included
 
                 # attempt 1 -> only letters present in train set
-                char_letters = f'[{''.join(options_set_train)}]'
-                if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
-                    return RegexPart(char_letters, options_set_train, percentage)
+                char_letters = f"[{''.join(options_set_train)}]"
+                
+                if not optional:
+                    if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
+                        return RegexPart(char_letters, options_set_train, percentage)
 
                 # attempt 2 -> general regex characters
                 char_general = ''
@@ -253,27 +267,31 @@ class RegexGenerator:
                     char_general += string.punctuation
 
                 char_general = f'[{char_general}]'
-
-                if len(re.findall(char_general, options_string)) == len(options_string): # everything found
-                    return RegexPart(char_general, options_set_train, percentage)
+                if not optional:
+                    if len(re.findall(char_general, options_string)) == len(options_string): # everything found
+                        return RegexPart(char_general, options_set_train, percentage)
 
                 # attempt 3 -> only letters but optional 
                 char_letters += '{0,1}'
 
-                if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
+                """
+                length of options below has to be checked with -1 because {0,1} always matches ''
+                """
+
+                if len(re.findall(char_letters, options_string)) -1 == len(options_string): # everything found
                     return RegexPart(char_letters, options_set_train, percentage)
 
                 # attempt 4 -> general regex characters but optional
                 char_general += '{0,1}'
 
-                if len(re.findall(char_general, options_string)) == len(options_string): # everything found
+                if len(re.findall(char_general, options_string)) -1 == len(options_string): # everything found
                     return RegexPart(char_general, options_set_train, percentage)
 
                 # attempt 5 -> any character or none
 
-                char_any = '[.?]'
+                char_any = '.?'
 
-                if len(re.findall(char_any, options_string)) == len(options_string): # everything found
+                if len(re.findall(char_any, options_string)) -1 == len(options_string): # everything found
                     return RegexPart(char_any, options_set_train, percentage)
 
                 raise Exception('Something went very wrong')
@@ -296,13 +314,47 @@ class RegexGenerator:
             if right:
                 right_list.append(data_entry.next_right())
 
-        # TODO: Now it has to use left, mid and right list with find correct block char and build regex block to be used in evolve
 
-    def evaluate(self):
-        r"""Evaluates current regexp for all data including test and return True or False whether all matches are correct or not"""
-        pass
+        if left:
+            left_block = find_correct_block_char(left_list)     
+        else:
+            left_block = None
+        if mid:
+            mid_block = find_correct_block_char(mid_list)
+        else:
+            mid_block = None
+        if right:
+            right_block = find_correct_block_char(right_list)
+        else:
+            right_block = None
 
-            
+        return left_block, mid_block, right_block
+
+    def evaluate(self, ignore_mid = True):
+        r"""
+        Evaluates current regexp for all data including test and return True or False whether all matches are correct or not
+        
+        Arguments:
+
+        ignore_mid (bool, optional): Whether to ignore building mid regex. (default: True)
+        """
+        regex = self.compile_from_builders(ignore_mid=ignore_mid)
+        for index, entry in enumerate(self.data_entries):
+
+            searched = [match for match in re.finditer(regex, entry.string)]
+            spans_found = [] 
+
+            for s in searched:
+                try:
+                    spans_found.append(s.span(1))
+                except:
+                    return False ## group 1 should always exist and match at least empty string
+
+            if (entry.selection in spans_found) and (len(set(spans_found).difference(set(self.spans_list))) == 0):
+                continue
+            else:
+                return False
+        return True
 
     def evolve(self, ignore_mid = True, mid = ""):
 
@@ -312,5 +364,29 @@ class RegexGenerator:
             else:
                 self.mid_regex = ".*?"
 
-        pass
+        do_left, do_mid, do_right = True, not ignore_mid, True
+
+        while (do_left or do_mid or do_right):
+
+            left_block, mid_block, right_block = self.generate_next_part(do_left, do_mid, do_right)
+            if do_left:
+                if left_block:
+                    self.left_regex_builder.append(left_block)
+                else:
+                    do_left = False
+            if do_mid:
+                if mid_block:
+                    self.mid_regex_builder.append(mid_block)
+                else:
+                    do_mid = False
+            if do_right:
+                if right_block:
+                    self.right_regex_builder.append(right_block)
+                else:
+                    do_right = False
+            
+            if self.evaluate(ignore_mid=ignore_mid):
+                return self.compile_from_builders(ignore_mid)
+
+        return None
 
