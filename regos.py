@@ -110,7 +110,7 @@ class RegexGenerator:
         self.set_punctuation = set(string.punctuation)
         self.set_whitespace = set(string.whitespace)
 
-    def parse_data(self, data, append = False, inclusive_end = True, alternative_keys = []):
+    def parse_data(self, data, start_end_keys = True, append = False, inclusive_end = True, alternative_keys = []):
         r"""
         This method parses data provided in list-of-dictionaries fashion to list of Data_Entry objects stored inside ``RegexGenerator`` object.
 
@@ -118,6 +118,7 @@ class RegexGenerator:
         Arguments:
 
         data (list): list of dictionary objects having fields ``string`` and ``selections`` 
+        start_end_keys (bool, optional): informs if spans in dict format are part of dictionary with keys ['start', 'end'] or just in tuple (start, end) form. Defaults to True
         append (bool, optional): if set to ``True`` data parsed is appended to currently stored. (default: ``False``)
         inclusive_end (bool, optional): if set to ``True`` then ``end`` index of selections will be treated inclusively in contrary to python's standard indexing. (default: ``True``)
         alternative_keys (list, optional): list of two strings that will replace original ``string`` and ``selection`` keys.
@@ -156,7 +157,10 @@ class RegexGenerator:
             d_entries = []
             # Creates ``Data_Entry`` for each selection (`span`) in string
             for span in entry[selection_key]:
-                d_entries.append(Data_Entry(entry[string_key], (span[0],span[1]+offset)))
+                if start_end_keys:
+                    d_entries.append(Data_Entry(entry[string_key], (span['start'],span['end']+offset)))
+                else:
+                    d_entries.append(Data_Entry(entry[string_key], (span[0],span[1]+offset)))
                 d_entries[-1].initialize_generators()
             self.data_entries.extend(d_entries)
 
@@ -201,7 +205,7 @@ class RegexGenerator:
 
     def generate_next_part(self, left = True, mid = False, right = True):
         r"""
-        Generates next Regex_Parts for specified parts of regex
+        Generates next RegexParts for specified parts of regex
 
         Arguments:
 
@@ -211,8 +215,8 @@ class RegexGenerator:
 
         Returns
 
-
-        TODO
+        (tuple): (left_block, mid_block, right_block) - ``RegexPart`` objects.
+        
 
         """
 
