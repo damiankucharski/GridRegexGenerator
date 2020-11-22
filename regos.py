@@ -253,50 +253,60 @@ class RegexGenerator:
                 options_string = ''.join(options) # test set is included
 
                 # attempt 1 -> only letters present in train set
-                char_letters = f"[{''.join(options_set_train)}]"
-                
-                if not optional:
+                if len(options_set_train) > 1:
+                    char_letters = f"[{''.join(options_set_train)}]"
+                else:
+                    char_letters = list(options_set_train)[0]
+               
+                if optional:
+                    char_letters += '{0,1}'
+                    if len(re.findall(char_letters, options_string)) -1 == len(options_string): # everything found
+                        return RegexPart(char_letters, options_set_train, percentage)
+
+                else:
                     if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
                         return RegexPart(char_letters, options_set_train, percentage)
 
                 # attempt 2 -> general regex characters
                 char_general = ''
+                counter = 0
+
                 if self.set_letters.intersection(options_set_train):
+                    counter += 1
                     char_general += r'\w' # captures also digits
                 elif self.set_digits.intersection(options_set_train):
+                    counter += 1
                     char_general += r'\d' # only digits if `word characters` not present
                 if self.set_whitespace.intersection(options_set_train):
+                    counter += 1
                     char_general += r'\s'
                 if self.set_punctuation.intersection(options_set_train):
+                    counter += 1
                     char_general += string.punctuation
 
-                char_general = f'[{char_general}]'
-                if not optional:
+                if counter > 1:
+                    char_general = f'[{char_general}]'
+                
+                if optional:
+                    char_general += {0,1}
+                    if len(re.findall(char_general, options_string)) -1 == len(options_string): # everything found
+                        return RegexPart(char_general, options_set_train, percentage)
+                else:
                     if len(re.findall(char_general, options_string)) == len(options_string): # everything found
                         return RegexPart(char_general, options_set_train, percentage)
 
-                # attempt 3 -> only letters but optional 
-                char_letters += '{0,1}'
 
-                """
-                length of options below has to be checked with -1 because {0,1} always matches ''
-                """
 
-                if len(re.findall(char_letters, options_string)) -1 == len(options_string): # everything found
-                    return RegexPart(char_letters, options_set_train, percentage)
+                # attempt 3 -> any character or none
+                if optional:
+                    char_any = '.?'
+                    if len(re.findall(char_any, options_string)) -1 == len(options_string): # everything found
+                        return RegexPart(char_any, options_set_train, percentage)
+                else:
+                    char_any = '.'
+                    if len(re.findall(char_any, options_string)) == len(options_string): # everything found
+                        return RegexPart(char_any, options_set_train, percentage)
 
-                # attempt 4 -> general regex characters but optional
-                char_general += '{0,1}'
-
-                if len(re.findall(char_general, options_string)) -1 == len(options_string): # everything found
-                    return RegexPart(char_general, options_set_train, percentage)
-
-                # attempt 5 -> any character or none
-
-                char_any = '.?'
-
-                if len(re.findall(char_any, options_string)) -1 == len(options_string): # everything found
-                    return RegexPart(char_any, options_set_train, percentage)
 
                 raise Exception('Something went very wrong')
 
