@@ -371,6 +371,23 @@ class RegexGenerator:
         return True
 
     def evolve(self, ignore_mid = True, mid = ""):
+        """
+        Creates and returns regular expression that matches provided samples. Part of interest is contained in 1st group.
+
+        Arguments:
+
+        ignore_mid (bool, optional): Whether to ignore building mid regex. (default: True)
+        mid (str, optional): If ignore mid is set to ``True`` then you can set that value to be exact match for part of interest. 
+
+        Returns:
+
+        (str): Regex string
+
+        """
+
+        if len(self.data_entries) == 0:
+            raise Exception("Provide data first. Use parse_data method first.")
+
 
         if ignore_mid:
             if mid:
