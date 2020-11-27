@@ -97,6 +97,7 @@ class RegexGenerator:
     def __init__(self):
         self.data_entries = []
         self.spans_list = []
+        self.all_searched_fragments = []
         self.left_regex_builder = []
         self.mid_regex_builder = []
         self.right_regex_builder = []
@@ -162,6 +163,7 @@ class RegexGenerator:
                 else:
                     d_entries.append(Data_Entry(entry[string_key], (span[0],span[1]+offset)))
                 d_entries[-1].initialize_generators()
+
             self.data_entries.extend(d_entries)
 
 
@@ -170,9 +172,9 @@ class RegexGenerator:
             self.train_part_end_index = int(ceil(len(self.data_entries) * 0.8))
 
         self.save_spans_data()
+        self.save_selections_data()
 
-
-    def compile_from_builders(self, ignore_mid = True, left_reversed = True):
+    def compile_from_builders(self, ignore_mid = True, left_reversed = True, len_left = None, len_mid = None, len_right = None):
         r"""
         Updates string regex parts using corresponding builders
 
@@ -180,6 +182,9 @@ class RegexGenerator:
 
         ignore_mid (bool, optional): if set to ``True`` then ``mid_regex`` will not be rebuilt. (default: ``True``)
         left_reversed (bool, optional):  if set to ``True`` then ``left_regex_builder`` is reversed before compiling into string regex. (default: ``True``)
+        len_left (int, optional): if set - only ``len_left`` blocks will be compiled. (default: ``None``)
+        len_mid (int, optional): if set - only ``len_mid`` blocks will be compiled. (default: ``None``)
+        len_right (int, optional): if set - only ``len_right`` blocks will be compiled. (default: ``None``)
 
         Returns:
 
@@ -188,20 +193,31 @@ class RegexGenerator:
         
         # used if left neighbourhood was iterated in reverse and thus regex was created from its end
         if left_reversed:
-            self.left_regex = ''.join([part.char for part in reversed(self.left_regex_builder)]) 
+            self.left_regex = ''.join([part.char for part in list(reversed(self.left_regex_builder)])[:len_left]) 
         else:
-            self.left_regex = ''.join([part.char for part in self.left_regex_builder])
+            self.left_regex = ''.join([part.char for part in self.left_regex_builder][:len_left])
         if not ignore_mid:
-            self.mid_regex = ''.join([part.char for part in self.mid_regex_builder])
-        self.right_regex = ''.join([part.char for part in self.right_regex_builder])
-
+            self.mid_regex = ''.join([part.char for part in self.mid_regex_builder][:len_mid])
+        self.right_regex = ''.join([part.char for part in self.right_regex_builder][:len_right])
+        
+        self.left_regex_match = []
+        self.mid_regex_match = []
+        self.right_regex_match = []
+        for entry in self.data_entries:
+            self.left_regex_match.extend(re.findall(self.left_regex, entry.string))
+            self.mid_regex_match.extend(re.findall(self.mid_regex, entry.string))
+            self.right_regex_match.extend(re.findall(self.right_regex, entry.string))
+        
         return f'{self.left_regex}({self.mid_regex}){self.right_regex}'
 
     def save_spans_data(self):
         r"""Creates ``spans_list`` list inside object that captures all spans from ``data_entries``"""
 
         self.spans_list = [entry.selection for entry in self.data_entries]
-
+    
+    def save_selections_data(self):
+        self.all_searched_fragments = [entry.search_fragment for entry in self.data_entries]
+        
 
     def generate_next_part(self, left = True, mid = False, right = True):
         r"""
@@ -253,19 +269,20 @@ class RegexGenerator:
                 options_string = ''.join(options) # test set is included
 
                 # attempt 1 -> only letters present in train set
-                if len(options_set_train) > 1:
-                    char_letters = f"[{''.join(options_set_train)}]"
-                else:
-                    char_letters = list(options_set_train)[0]
-               
-                if optional:
-                    char_letters += '{0,1}'
-                    if len(re.findall(char_letters, options_string)) -1 == len(options_string): # everything found
-                        return RegexPart(char_letters, options_set_train, percentage)
+                if len(options_set_train) < 3:
+                    if len(options_set_train) > 1:
+                        char_letters = f"[{''.join(options_set_train)}]".replace('-','\\-').replace('(','\\(').replace(')','\\)').replace('{','\\{').replace('[','\\[')
+                    else:
+                        char_letters = list(options_set_train)[0]
+                
+                    if optional:
+                        char_letters += '{0,1}'
+                        if len(re.findall(char_letters, options_string)) -1 == len(options_string): # everything found
+                            return RegexPart(char_letters, options_set_train, percentage)
 
-                else:
-                    if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
-                        return RegexPart(char_letters, options_set_train, percentage)
+                    else:
+                        if len(re.findall(char_letters, options_string)) == len(options_string): # everything found
+                            return RegexPart(char_letters, options_set_train, percentage)
 
                 # attempt 2 -> general regex characters
                 char_general = ''
@@ -282,19 +299,23 @@ class RegexGenerator:
                     char_general += r'\s'
                 if self.set_punctuation.intersection(options_set_train):
                     counter += 1
-                    char_general += string.punctuation
+                    difference = self.set_punctuation.intersection(options_set_train)
+                    char_general += ''.join(difference).replace('-','\\-').replace('(','\\(').replace(')','\\)').replace('{','\\{').replace('[','\\[')
 
                 if counter > 1:
                     char_general = f'[{char_general}]'
                 
-                if optional:
-                    char_general += {0,1}
-                    if len(re.findall(char_general, options_string)) -1 == len(options_string): # everything found
-                        return RegexPart(char_general, options_set_train, percentage)
-                else:
-                    if len(re.findall(char_general, options_string)) == len(options_string): # everything found
-                        return RegexPart(char_general, options_set_train, percentage)
-
+                try:
+                    if optional:
+                        char_general += "{0,1}"
+                        if len(re.findall(char_general, options_string)) -1 == len(options_string): # everything found
+                            return RegexPart(char_general, options_set_train, percentage)
+                    else:
+                        if len(re.findall(char_general, options_string)) == len(options_string): # everything found
+                            return RegexPart(char_general, options_set_train, percentage)
+                except Exception as ex:
+                    print(ex)
+                    input(char_general)
 
 
                 # attempt 3 -> any character or none
@@ -308,7 +329,7 @@ class RegexGenerator:
                         return RegexPart(char_any, options_set_train, percentage)
 
 
-                raise Exception('Something went very wrong')
+                raise Exception(f'Something went very wrong for set: {str(options)}')
 
             else:
                 return None
@@ -344,6 +365,36 @@ class RegexGenerator:
 
         return left_block, mid_block, right_block
 
+
+    def fix_escaped(self, string):
+
+        escaped = ['[','(','{','-','"','|','^']
+        for char in escaped:
+            string = string.replace(char, f'\\{char}')
+        return string
+
+    def prepare_mid(self, strings, quantifier = '+?', with_brackets = True):
+
+        letters_set = set(string.ascii_letters)
+        digits_set = set(string.digits)
+        whitespace_set = set(string.whitespace)
+        punct_set = set(string.punctuation)
+        string_set = set(''.join(strings))
+        options = []
+        if len(letters_set.intersection(string_set)) > 0:
+            options.append('\w')
+        elif len(digits_set.intersection(string_set)) > 0:
+            options.append('\d')
+        if len(whitespace_set.intersection(string_set)) > 0:
+            options.extend(string_set.intersection(whitespace_set))
+        if len(punct_set.intersection(string_set)) > 0:
+            options.extend(string_set.intersection(punct_set))
+    
+        regexp = f"[{self.fix_escaped(''.join(options))}]{quantifier}"
+        if with_brackets:
+            regexp = f"({regexp})"
+        return regexp
+
     def evaluate(self, ignore_mid = True):
         r"""
         Evaluates current regexp for all data including test and return True or False whether all matches are correct or not
@@ -370,8 +421,21 @@ class RegexGenerator:
                 return False
         return True
 
-    def evolve(self, ignore_mid = True, mid = ""):
-        """
+    def check_mid_reg_correct(self, ignore_mid = False):
+        
+        self.compile_from_builders(ignore_mid=ignore_mid)
+        
+        for entry in self.data_entries:
+            match = re.match(self.mid_regex, entry.search_fragment)
+            match_full = re.search(self.mid_regex, entry.search_fragment)
+            if match.group(0) != entry.search_fragment:
+                return False
+
+        return True
+        
+
+    def evolve(self, ignore_mid = True, mid = "", max_iter = -1, min_iter = -1, check_mid = True, mid_classic = True):
+        r"""
         Creates and returns regular expression that matches provided samples. Part of interest is contained in 1st group.
 
         Arguments:
@@ -397,7 +461,37 @@ class RegexGenerator:
 
         do_left, do_mid, do_right = True, not ignore_mid, True
 
-        while (do_left or do_mid or do_right):
+        # first only mid
+        while do_mid:
+            if mid_classic:
+                left_block, mid_block, right_block = self.generate_next_part(False, do_mid, False)
+                if mid_block:
+                    self.mid_regex_builder.append(mid_block)
+                else:
+                    do_mid = False
+            else:
+                self.mid_regex = self.prepare_mid(self.all_searched_fragments, with_brackets=False)
+                do_mid = False
+                ignore_mid = True
+
+
+        if check_mid:
+            if not self.check_mid_reg_correct():
+                raise Exception("Bad exception! Mid regex was not found")
+
+            if self.evaluate(ignore_mid=ignore_mid):
+                return self.compile_from_builders(ignore_mid)   
+
+        # then only neighbourhood
+        if max_iter or min_iter:
+            n_iters = 0
+        while (do_left or do_right):
+
+            if max_iter:
+                if n_iters == max_iter:
+                    break
+                n_iters += 1
+                print(n_iters)
 
             left_block, mid_block, right_block = self.generate_next_part(do_left, do_mid, do_right)
             if do_left:
@@ -405,19 +499,20 @@ class RegexGenerator:
                     self.left_regex_builder.append(left_block)
                 else:
                     do_left = False
-            if do_mid:
-                if mid_block:
-                    self.mid_regex_builder.append(mid_block)
-                else:
-                    do_mid = False
             if do_right:
                 if right_block:
                     self.right_regex_builder.append(right_block)
                 else:
                     do_right = False
             
-            if self.evaluate(ignore_mid=ignore_mid):
-                return self.compile_from_builders(ignore_mid)
+            if min_iter:
+                if n_iters >= min_iter:
+                    if self.evaluate(ignore_mid=ignore_mid):
+                        return self.compile_from_builders(ignore_mid)
+
+        if max_iter:
+            print("Max iterations number exceeded")
+            return self
 
         return None
 
