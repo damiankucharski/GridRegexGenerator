@@ -193,7 +193,7 @@ class RegexGenerator:
         
         # used if left neighbourhood was iterated in reverse and thus regex was created from its end
         if left_reversed:
-            self.left_regex = ''.join([part.char for part in list(reversed(self.left_regex_builder)])[:len_left]) 
+            self.left_regex = ''.join([part.char for part in list(reversed(self.left_regex_builder))])[:len_left]
         else:
             self.left_regex = ''.join([part.char for part in self.left_regex_builder][:len_left])
         if not ignore_mid:
